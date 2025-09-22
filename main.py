@@ -8,13 +8,7 @@ import base64
 from io import BytesIO
 import re
 from PIL import Image
-#import pytesseract
-from openai import OpenAI
 import os
-from dotenv import load_dotenv
-
-# Load environment variables from .env file
-load_dotenv()
 
 # Set page configuration
 st.set_page_config(
@@ -31,15 +25,14 @@ if not api_key:
     st.error("OpenAI API key not found. Please set it in your environment variables or Streamlit secrets.")
     st.stop()
 
-# Initialize OpenAI client with compatibility for newer versions
+# Use compatible OpenAI import
 try:
-    client = OpenAI(api_key=api_key)
-except TypeError:
-    # Fallback for older OpenAI version if needed
     import openai
     openai.api_key = api_key
-    client = openai
-
+    OPENAI_AVAILABLE = True
+except ImportError:
+    OPENAI_AVAILABLE = False
+    st.warning("OpenAI package not available. Using mock functions for demo.")
 
 # App title and description
 st.title("SysComply - AI-Powered KYC Review Assistant")
@@ -144,62 +137,14 @@ def process_document(uploaded_file):
             "Content": "Simulated extracted data"
         }
 
-
-# Function to perform sanctions screening using OpenAI
+# Function to perform sanctions screening
 def screen_against_sanctions(extracted_data, sanctions_df):
     name = extracted_data.get("Full Name", "")
-    dob = extracted_data.get("Date of Birth", "")
     
-    # Check for exact matches first
+    # Check for exact matches
     exact_matches = sanctions_df[sanctions_df['names'].str.contains(name, case=False)]
     
-    # If no exact matches, use OpenAI for fuzzy matching
-    if exact_matches.empty:
-        prompt = f"""
-        Compare the name "{name}" with the following list of sanctioned individuals: {', '.join(sanctions_df['names'].tolist())}.
-        Return a JSON response with:
-        - match: true or false
-        - matched_name: if match is true, the name that matched
-        - confidence: percentage confidence of match
-        - reason: if match is true, the reason for sanction
-        
-        Only return valid JSON.
-        """
-        
-        try:
-            response = client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[
-                    {"role": "system", "content": "You are a compliance screening assistant. Analyze names for potential matches against sanctions lists."},
-                    {"role": "user", "content": prompt}
-                ],
-                max_tokens=150
-            )
-            
-            result = json.loads(response.choices[0].message.content)
-            if result.get('match', False):
-                return {
-                    "match": True,
-                    "matched_name": result.get('matched_name', ''),
-                    "confidence": result.get('confidence', '0%'),
-                    "reason": result.get('reason', ''),
-                    "type": "Fuzzy Match"
-                }
-        except Exception as e:
-            st.error(f"OpenAI API error: {str(e)}")
-            # Fallback to simple matching if API call fails
-            for sanctioned_name in sanctions_df['names']:
-                if name.split()[0].lower() in sanctioned_name.lower() or name.split()[-1].lower() in sanctioned_name.lower():
-                    match = sanctions_df[sanctions_df['names'] == sanctioned_name].iloc[0]
-                    return {
-                        "match": True,
-                        "matched_name": sanctioned_name,
-                        "confidence": "85%",
-                        "reason": match['reasons'],
-                        "type": match['types']
-                    }
-    
-    elif not exact_matches.empty:
+    if not exact_matches.empty:
         match = exact_matches.iloc[0]
         return {
             "match": True,
@@ -209,10 +154,41 @@ def screen_against_sanctions(extracted_data, sanctions_df):
             "type": match['types']
         }
     
+    # Simple fuzzy matching as fallback
+    for sanctioned_name in sanctions_df['names']:
+        if name.split()[0].lower() in sanctioned_name.lower() or name.split()[-1].lower() in sanctioned_name.lower():
+            match = sanctions_df[sanctions_df['names'] == sanctioned_name].iloc[0]
+            return {
+                "match": True,
+                "matched_name": sanctioned_name,
+                "confidence": "85%",
+                "reason": match['reasons'],
+                "type": match['types']
+            }
+    
     return {"match": False}
 
-# Function to generate AI summary using OpenAI
+# Function to generate AI summary using OpenAI (with fallback)
 def generate_summary(extracted_data, screening_results, timeline_data):
+    if not OPENAI_AVAILABLE:
+        # Fallback template if OpenAI is not available
+        return f"""
+        KYC Review Summary for {extracted_data.get('Full Name', 'Customer')}
+        
+        Identification Details:
+        - Name: {extracted_data.get('Full Name', 'N/A')}
+        - Date of Birth: {extracted_data.get('Date of Birth', 'N/A')}
+        - Identification Number: {extracted_data.get('Passport Number', extracted_data.get('BVN', 'N/A'))}
+        
+        Sanctions Screening:
+        - Result: {'Match found' if screening_results.get('match', False) else 'No matches found'}
+        {('- Match Details: ' + screening_results.get('reason', '')) if screening_results.get('match', False) else ''}
+        
+        Risk Assessment: {'Medium' if screening_results.get('match', False) else 'Low'}
+        
+        Next Steps: {'Enhanced due diligence recommended' if screening_results.get('match', False) else 'Standard monitoring'}
+        """
+    
     # Prepare prompt for OpenAI
     prompt = f"""
     As a compliance analyst, generate a concise KYC review summary based on the following data:
@@ -237,7 +213,7 @@ def generate_summary(extracted_data, screening_results, timeline_data):
     """
     
     try:
-        response = client.chat.completions.create(
+        response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": "You are a compliance analyst preparing KYC review summaries for a financial institution."},
