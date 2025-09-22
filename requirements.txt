@@ -6,5 +6,6 @@ Pillow==10.4.0
 python-dateutil==2.8.2
 pytz==2023.3
 pyyaml==6.0.1
-requests==2.31.0z
+requests==2.31.0
 python-dotenv==1.0.1
+altair==5.5.0
