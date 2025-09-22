@@ -8,7 +8,7 @@ import base64
 from io import BytesIO
 import re
 from PIL import Image
-import pytesseract
+#import pytesseract
 from openai import OpenAI
 import os
 from dotenv import load_dotenv
@@ -62,29 +62,27 @@ def load_sample_data():
 
 # Function to simulate document processing with OCR
 def process_document(uploaded_file):
-    # In a real implementation, this would use Tesseract or Azure Vision API
-    # For demo purposes, we'll return simulated extracted data
-    
-    # Sample extracted data based on document type
-    doc_type = "Passport"
-    if uploaded_file.name.lower().endswith(('.png', '.jpg', '.jpeg')):
-        # Try to extract text from image using pytesseract if available
-        try:
-            image = Image.open(uploaded_file)
-            extracted_text = pytesseract.image_to_string(image)
-            if "bvn" in extracted_text.lower() or "bank" in extracted_text.lower():
-                doc_type = "BVN"
-            elif "utility" in extracted_text.lower() or "bill" in extracted_text.lower():
-                doc_type = "Utility Bill"
-        except:
-            pass
-    elif uploaded_file.name.lower().endswith('.pdf'):
-        if "cac" in uploaded_file.name.lower():
+    file_name = uploaded_file.name.lower()
+
+    # Decide document type based on file extension or filename keywords
+    if file_name.endswith(('.png', '.jpg', '.jpeg')):
+        if "bvn" in file_name:
+            doc_type = "BVN"
+        elif "utility" in file_name:
+            doc_type = "Utility Bill"
+        else:
+            doc_type = "Passport"
+    elif file_name.endswith('.pdf'):
+        if "cac" in file_name:
             doc_type = "CAC Certificate"
-        elif "statement" in uploaded_file.name.lower():
+        elif "statement" in file_name:
             doc_type = "Bank Statement"
-    
-    # Simulate extracted data based on document type
+        else:
+            doc_type = "PDF Document"
+    else:
+        doc_type = "Unknown"
+
+    # Return simulated extracted data
     if doc_type == "Passport":
         return {
             "Document Type": "International Passport",
@@ -123,7 +121,7 @@ def process_document(uploaded_file):
             "Incorporation Date": "12-06-2015",
             "Business Type": "Private Limited Company"
         }
-    else:  # Bank Statement
+    elif doc_type == "Bank Statement":
         return {
             "Document Type": "Bank Statement",
             "Account Name": "Adebola Johnson",
@@ -132,6 +130,12 @@ def process_document(uploaded_file):
             "Statement Period": "October 2023",
             "Average Balance": "₦1,245,000"
         }
+    else:
+        return {
+            "Document Type": "Unknown",
+            "Content": "Simulated extracted data"
+        }
+
 
 # Function to perform sanctions screening using OpenAI
 def screen_against_sanctions(extracted_data, sanctions_df):
