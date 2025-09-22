@@ -31,7 +31,15 @@ if not api_key:
     st.error("OpenAI API key not found. Please set it in your environment variables or Streamlit secrets.")
     st.stop()
 
-client = OpenAI(api_key=api_key)
+# Initialize OpenAI client with compatibility for newer versions
+try:
+    client = OpenAI(api_key=api_key)
+except TypeError:
+    # Fallback for older OpenAI version if needed
+    import openai
+    openai.api_key = api_key
+    client = openai
+
 
 # App title and description
 st.title("SysComply - AI-Powered KYC Review Assistant")
