@@ -34,6 +34,15 @@ except ImportError:
     OPENAI_AVAILABLE = False
     st.warning("OpenAI package not available. Using mock functions for demo.")
 
+# Initialize chat history in session state
+if "messages" not in st.session_state:
+    st.session_state.messages = [
+        {
+            "role": "assistant", 
+            "content": "Hello! I'm your SysComply AI Assistant. I can help you with:\n\n• KYC analysis questions\n• Compliance regulations\n• Risk assessment guidance\n• Document review queries\n• Nigerian financial compliance\n\nWhat would you like to know about your analysis or compliance matters?"
+        }
+    ]
+
 # App title and description
 st.title("SysComply - AI-Powered KYC Review Assistant")
 st.markdown("""
@@ -243,6 +252,44 @@ def generate_summary(extracted_data, screening_results, timeline_data):
         Next Steps: {'Enhanced due diligence recommended' if screening_results.get('match', False) else 'Standard monitoring'}
         """
 
+# Function to handle AI assistant chat
+def handle_chat_query(user_input, chat_history=None):
+    if not OPENAI_AVAILABLE:
+        return "I'm currently operating in demo mode. In the full version, I can help you with:\n\n• KYC compliance questions\n• Risk assessment guidance\n• Regulatory requirements\n• Document analysis\n• Nigerian financial regulations"
+    
+    # Enhanced system prompt for compliance specialist
+    system_prompt = """You are SysComply AI, a specialized compliance assistant for Nigerian financial services. You help with:
+
+1. KYC/KYB compliance analysis
+2. Nigerian financial regulations (CBN guidelines, AML/CFT)
+3. Risk assessment and due diligence
+4. PEP and sanctions screening
+5. Document verification procedures
+6. Compliance reporting requirements
+
+You provide practical, regulatory-compliant advice specific to the Nigerian financial sector. Be concise but thorough."""
+
+    try:
+        messages = [{"role": "system", "content": system_prompt}]
+        
+        # Add chat history if provided
+        if chat_history:
+            for msg in chat_history[-6:]:  # Keep last 6 messages for context
+                messages.append(msg)
+        
+        messages.append({"role": "user", "content": user_input})
+        
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=messages,
+            max_tokens=400,
+            temperature=0.7
+        )
+        
+        return response.choices[0].message.content
+    except Exception as e:
+        return f"I apologize, but I'm experiencing technical difficulties. Error: {str(e)}"
+
 # Function to create executive dashboard
 def render_executive_dashboard():
     st.header("Executive Dashboard")
@@ -286,13 +333,69 @@ def render_executive_dashboard():
     })
     st.dataframe(flagged_cases, use_container_width=True)
 
+# Function to render AI Assistant tab
+def render_ai_assistant():
+    st.header("🤖 SysComply AI Assistant")
+    st.markdown("Ask me anything about KYC compliance, risk assessment, or Nigerian financial regulations.")
+    
+    # Quick action buttons
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        if st.button("📋 KYC Best Practices", use_container_width=True):
+            st.session_state.messages.append({"role": "user", "content": "What are the KYC best practices for Nigerian banks?"})
+    with col2:
+        if st.button("⚖️ Regulatory Requirements", use_container_width=True):
+            st.session_state.messages.append({"role": "user", "content": "What are the current CBN KYC requirements for tiered accounts?"})
+    with col3:
+        if st.button("🔍 Risk Assessment", use_container_width=True):
+            st.session_state.messages.append({"role": "user", "content": "How should I assess customer risk for PEP relationships?"})
+    
+    st.divider()
+    
+    # Chat container
+    chat_container = st.container()
+    
+    with chat_container:
+        # Display chat messages
+        for message in st.session_state.messages:
+            with st.chat_message(message["role"]):
+                st.markdown(message["content"])
+        
+        # Chat input
+        if prompt := st.chat_input("Ask about compliance, regulations, or your analysis..."):
+            # Add user message to chat history
+            st.session_state.messages.append({"role": "user", "content": prompt})
+            with st.chat_message("user"):
+                st.markdown(prompt)
+            
+            # Generate assistant response
+            with st.chat_message("assistant"):
+                with st.spinner("Analyzing your question..."):
+                    response = handle_chat_query(prompt, st.session_state.messages)
+                    st.markdown(response)
+            
+            # Add assistant response to chat history
+            st.session_state.messages.append({"role": "assistant", "content": response})
+    
+    # Clear chat button
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        if st.button("Clear Conversation", type="secondary", use_container_width=True):
+            st.session_state.messages = [
+                {
+                    "role": "assistant", 
+                    "content": "Hello! I'm your SysComply AI Assistant. I can help you with:\n\n• KYC analysis questions\n• Compliance regulations\n• Risk assessment guidance\n• Document review queries\n• Nigerian financial compliance\n\nWhat would you like to know about your analysis or compliance matters?"
+                }
+            ]
+            st.rerun()
+
 # Main app logic
 def main():
     # Load sample data
     sanctions_df, sample_timeline = load_sample_data()
     
     # Create tabs
-    tab1, tab2 = st.tabs(["Compliance Analyst", "Executive Dashboard"])
+    tab1, tab2, tab3 = st.tabs(["Compliance Analyst", "Executive Dashboard", "AI Assistant"])
     
     with tab1:
         st.header("KYC Document Review")
@@ -442,6 +545,9 @@ def main():
     
     with tab2:
         render_executive_dashboard()
+    
+    with tab3:
+        render_ai_assistant()
 
 if __name__ == "__main__":
     main()
